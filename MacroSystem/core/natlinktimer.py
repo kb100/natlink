@@ -10,13 +10,30 @@ import natlink
 natlinktimer = None
 
 
+class GrammarTimer:
+    """object which specifies how to call the natlinkTimer
+    
+    """
+    def __init__(self, interval, **kw):
+        pass
+
 class NatlinkTimer:
     """
-    This class utilises :meth:`natlink.setTimerCallback`, so more callback can be done
+    This class utilises :meth:`natlink.setTimerCallback`, but multiplexes
+    
+    In this way, more grammars can use the single Natlink timer together.
+    
+    First written by Christo Butcher for Dragonfly, now enhanced by Quintijn Hoogenboom, May 2020
+    
     """
 
     def __init__(self):
-        """
+        """initialize the natlink timer instance
+        
+        Should be called only once in a session
+        
+        The grammar callback functions are the keys of the self.callbacks dict,
+        The corresponding values are GrammarTimer instances, which specify interval and possibly other parameters
         """
         self.callbacks = {}
         self.debug = None
@@ -38,7 +55,7 @@ class NatlinkTimer:
             interval = interval * 1000
         interval = int(interval)
         prevTime = curTime
-        self.callbacks[callback] = (interval, prevTime)
+        self.callbacks[callback] = GrammarTimer(interval, prevTime)
         if self.debug: print("set timer %s: %s (%s)"% (callback, interval, prevTime))
         self.hittimer()
 
@@ -66,15 +83,16 @@ class NatlinkTimer:
         if self.debug: print("start hittimer at", starttime)
 
         nextTimes = []
-        for callbackFunc, (interval, prevTime) in copy.copy(self.callbacks).items():
-            elapsed = starttime - prevTime
+        toBeRemoved = []
+        for callbackFunc, grammarTimer in self.callbacks.items():
+            elapsed = grammarTimer.starttime - grammarTimer.prevTime
             if elapsed >= interval:
                 try:
                     if self.debug: print("do callback %s (%s, %s)"% (callbackFunc, elapsed, interval))
                     callbackFunc()
                 except:
                     if self.debug: print("callbackFunc %s throws an exception, remove from callbacks dict"% callbackFunc)
-                    del self.callbacks[callbackFunc]
+                    toBeRemoved.append(callbackFunc)
                 else:
                     if self.debug > 1: print("set new timer interval %s: %s"% (callbackFunc, interval))
                     nextTimes.append(interval)
@@ -82,7 +100,8 @@ class NatlinkTimer:
                 remaining = interval - elapsed
                 if self.debug > 1: print("set remaining time for %s: %s"% (callbackFunc, remaining))
                 nextTimes.append(remaining)
-        
+        for removeCallbackFunc in toBeRemoved:
+            del self.callbacks[removeCallbackFunc]
         endtime = time.time()
         callbackstime = endtime - starttime
         if self.debug: print("time for %s callback functions: %s"% (len(self.callbacks), callbackstime))
